@@ -3,7 +3,6 @@ on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
-
 jobs:
   retry:
     runs-on: ubuntu-latest
@@ -11,50 +10,32 @@ jobs:
     steps:
       - name: Install OCI CLI
         run: pip install oci-cli --quiet
-
       - name: Configure OCI
-        run: |
-          mkdir -p ~/.oci
-          printf "%s" "$OCI_PRIVATE_KEY" > ~/.oci/oci_api_key.pem
-          chmod 600 ~/.oci/oci_api_key.pem
-          printf "[DEFAULT]
-user=%s
-fingerprint=%s
-tenancy=%s
-region=%s
-key_file=~/.oci/oci_api_key.pem
-"             "$OCI_USER_OCID" "$OCI_FINGERPRINT" "$OCI_TENANCY_OCID" "$OCI_REGION" > ~/.oci/config
         env:
           OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
           OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
           OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
           OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
           OCI_REGION: ${{ secrets.OCI_REGION }}
-
-      - name: Try create A1 instance
         run: |
-          SSH_KEY="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC2vlHoeuKZ+0wQI7SH6p0LxMBDM+clL3Dh18Ab9USf29m5GaFM/9ZezjrWpu/D29zwv6wsdzVv/+vySXFH3cKh9u4veSTXrls+iHaU8xwx8PvEj6z6u6BP/4fGrqjF8vnZ9POCs/KUblQ8WJK68eU8gx2KFzS7ct6mE2r8l35myC4Ra0Whndj/6rCuB8M3pUPRxsVDC3mMyIPkyD/ufEbWOySc9gegXHjKX6m5mT5+JdvMQnrXSxpzcYSekTcAcEMOvv9baHPmDP+myu6hnOoctd47vFTuAmsQ+vHUCsKD32ngJcibR+cZfnOeEezvi45WH6poPO1CNqzCEJAGQXNI7btFLNsw1EYD1Skdf2om1SluucfroQCCpbJgyPoq9LvBHqI1eMPFXBow5RGk/9eqjH+w2ePp1G7nE9C/v2S2lZuEb39G4Ax2Jtffr9yydykntRKv8hmhCSFIvzOfm2ZPrNsT3PjvuXOS4l668Pz6hR+1SI+tj+S188bGA/azOKmJqNpM/ZkhPp+nAOrVADWE1RRd9W0rW3Mi+c5r6Mh62N9LOJyxioeDUmIisLxk2emBG0z8ipcjf352BTKHftiwBfbrbso/Bc0Kluy9V9jIJGZspfASpw/LKcOgg5cmn2Yx0GcXCMlUBaAcNWbq7lIRb9kWR1FrLOhseFYg87i7cw== radio-hermes-oracle"
-          CLOUD_INIT=$(printf "#cloud-config
-ssh_authorized_keys:
-  - %s
-" "$SSH_KEY" | base64 -w0)
-          COMPARTMENT="$OCI_TENANCY_OCID"
-          ADS=$(oci iam availability-domain list --compartment-id "$COMPARTMENT" --query "data[*].name" --raw-output 2>/dev/null | tr -d "[] | tr ''' \n | tr , \n | xargs)
-          echo "ADs disponibles: $ADS"
-          for AD in $ADS; do
-            echo ">> Intentando $AD ..."
-            RESULT=$(oci compute instance launch               --availability-domain "$AD"               --compartment-id "$COMPARTMENT"               --shape "VM.Standard.A1.Flex"               --shape-config '{"ocpus":1,"memoryInGBs":6}'               --subnet-id "$OCI_SUBNET_OCID"               --image-id "$OCI_IMAGE_OCID"               --display-name "radio-hermes-server"               --user-data "$CLOUD_INIT"               --assign-public-ip true 2>&1 || true)
-            if echo "$RESULT" | grep -q '"id": "ocid1.instance'; then
-              IP=$(echo "$RESULT" | python3 -c "import sys,json,re; d=json.load(sys.stdin); print(d.get('data',{}).get('public-ip''' or 'sin IP'')" 2>/dev/null || echo "ver consola")
-              echo "EXITO! Instancia creada en $AD"
-              echo "IP publica: $IP"
-              exit 0
-            else
-              echo "$AD sin capacidad"
-            fi
-          done
-          echo "Sin capacidad en todos los ADs. Reintentando en 10 min automaticamente."
+          mkdir -p ~/.oci
+          printf "%s" "$OCI_PRIVATE_KEY" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+          printf "[DEFAULT]\nuser=%s\nfingerprint=%s\ntenancy=%s\nregion=%s\nkey_file=/home/runner/.oci/oci_api_key.pem\n" "$OCI_USER_OCID" "$OCI_FINGERPRINT" "$OCI_TENANCY_OCID" "$OCI_REGION" > ~/.oci/config
+      - name: Try create A1 instance
         env:
           OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
           OCI_SUBNET_OCID: ${{ secrets.OCI_SUBNET_OCID }}
           OCI_IMAGE_OCID: ${{ secrets.OCI_IMAGE_OCID }}
+        run: |
+          SSH_KEY="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC2vlHoeuKZ+0wQI7SH6p0LxMBDM+clL3Dh18Ab9USf29m5GaFM/9ZezjrWpu/D29zwv6wsdzVv/+vySXFH3cKh9u4veSTXrls+iHaU8xwx8PvEj6z6u6BP/4fGrqjF8vnZ9POCs/KUblQ8WJK68eU8gx2KFzS7ct6mE2r8l35myC4Ra0Whndj/6rCuB8M3pUPRxsVDC3mMyIPkyD/ufEbWOySc9gegXHjKX6m5mT5+JdvMQnrXSxpzcYSekTcAcEMOvv9baHPmDP+myu6hnOoctd47vFTuAmsQ+vHUCsKD32ngJcibR+cZfnOeEezvi45WH6poPO1CNqzCEJAGQXNI7btFLNsw1EYD1Skdf2om1SluucfroQCCpbJgyPoq9LvBHqI1eMPFXBow5RGk/9eqjH+w2ePp1G7nE9C/v2S2lZuEb39G4Ax2Jtffr9yydykntRKv8hmhCSFIvzOfm2ZPrNsT3PjvuXOS4l668Pz6hR+1SI+tj+S188bGA/azOKmJqNpM/ZkhPp+nAOrVADWE1RRd9W0rW3Mi+c5r6Mh62N9LOJyxioeDUmIisLxk2emBG0z8ipcjf352BTKHftiwBfbrbso/Bc0Kluy9V9jIJGZspfASpw/LKcOgg5cmn2Yx0GcXCMlUBaAcNWbq7lIRb9kWR1FrLOhseFYg87i7cw== radio-hermes-oracle"
+          CLOUD_INIT=$(printf '#cloud-config\nssh_authorized_keys:\n  - %s\n' "$SSH_KEY" | base64 -w0)
+          for AD_NUM in 1 2 3; do
+            AD=$(oci iam availability-domain list --compartment-id "$OCI_TENANCY_OCID" --query "data[$((AD_NUM-1))].name" --raw-output 2>/dev/null || echo "")
+            [ -z "$AD" ] && echo "AD-${AD_NUM} no encontrado" && continue
+            echo ">> Intentando $AD"
+            RESULT=$(oci compute instance launch --availability-domain "$AD" --compartment-id "$OCI_TENANCY_OCID" --shape VM.Standard.A1.Flex --shape-config '{"ocpus":1,"memoryInGBs":6}' --subnet-id "$OCI_SUBNET_OCID" --image-id "$OCI_IMAGE_OCID" --display-name radio-hermes-server --user-data "$CLOUD_INIT" --assign-public-ip true 2>&1 || true)
+            echo "$RESULT" | grep -q '"id": "ocid1.instance' && echo "EXITO en $AD" && echo "$RESULT" | grep -E '"id"|"lifecycle-state"' && exit 0
+            echo "$AD: sin capacidad"
+          done
+          echo "Sin capacidad. Reintentando en 10 min."
