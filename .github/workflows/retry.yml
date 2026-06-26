@@ -1,0 +1,55 @@
+name: Oracle A1 Retry
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup OCI CLI
+        run: |
+          pip install oci-cli --quiet
+          mkdir -p ~/.oci
+          echo "$OCI_PRIVATE_KEY" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+          cat > ~/.oci/config << EOF
+          [DEFAULT]
+          user=$OCI_USER_OCID
+          fingerprint=$OCI_FINGERPRINT
+          tenancy=$OCI_TENANCY_OCID
+          region=$OCI_REGION
+          key_file=~/.oci/oci_api_key.pem
+          EOF
+        env:
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+
+      - name: Try create instance
+        run: |
+          SSH_KEY="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC2vlHoeuKZ+iVzm6GxW6qU3BQRUY1IUVJJtJXy1dqRW0AQJ1Gk0a1Ux5cH0kV0J0LmCq2V8X0pKxqJVmSyZ0rYkXJ1UyVR0RnKqWbJzNkGU3qJVmSyZ0rYkXJ1UyVR0RnKqWbJzNkGU3 radio-hermes-oracle"
+          CLOUD_INIT=$(echo "#cloud-config
+ssh_authorized_keys:
+  - $SSH_KEY" | base64 -w0)
+          COMPARTMENT="$OCI_TENANCY_OCID"
+          SHAPE="VM.Standard.A1.Flex"
+          for AD in 1 2 3; do
+            echo "Intentando AD-$AD..."
+            RESULT=$(oci compute instance launch               --availability-domain "$(oci iam availability-domain list --compartment-id $COMPARTMENT --query "data[$((AD-1))].'name'" --raw-output 2>/dev/null)"               --compartment-id "$COMPARTMENT"               --shape "$SHAPE"               --shape-config '{"ocpus":1,"memoryInGBs":6}'               --subnet-id "$OCI_SUBNET_OCID"               --image-id "$OCI_IMAGE_OCID"               --display-name "radio-hermes-server"               --user-data "$CLOUD_INIT"               --assign-public-ip true 2>&1 || true)
+            if echo "$RESULT" | grep -q '"id": "ocid1.instance'; then
+              echo "EXITO! Instancia creada en AD-$AD"
+              echo "$RESULT" | grep -E '"id"|"publicIp"|"privateIp"'
+              exit 0
+            else
+              echo "AD-$AD no disponible: $(echo $RESULT | grep -o 'Out of host capacity\|LimitExceeded\|error' | head -1)"
+            fi
+          done
+          echo "Todos los ADs sin capacidad. Reintentando en 10 min..."
+        env:
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_SUBNET_OCID: ${{ secrets.OCI_SUBNET_OCID }}
+          OCI_IMAGE_OCID: ${{ secrets.OCI_IMAGE_OCID }}
